@@ -11,7 +11,8 @@
 
 # What are bent normals?
 ![alt text](https://raw.githubusercontent.com/Fewes/BNAO/master/BentNormalsExample.gif)  
-Bent normal maps store the direction of least occlusion in a texture. They can be used to occlude cubemap reflections based on the view direction in a much more realistic way than just multiplying with an ambient occlusion term. They can also be used to get an ambient color value which more closesly resembles a ray traced result.  
+Bent normal maps store the direction of least occlusion (in other words, the direction in which the most ambient light is coming from) in a texture.  
+They can be used to occlude cubemap reflections based on the view direction in a much more realistic way than just multiplying with an ambient occlusion term. They can also be used to get an ambient color value which more closesly resembles a ray traced result.  
 For details on how to implement these effects in your own shader, see the file "Shader Implementation Example.txt".
 
 # Can I specify a max distance for the ambient occlusion?
