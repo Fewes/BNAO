@@ -2,8 +2,6 @@
 ![alt text](https://raw.githubusercontent.com/Fewes/BNAO/master/Example.png)
 ![alt text](https://raw.githubusercontent.com/Fewes/BNAO/master/UI.png)
 
-A tiny, GPU-based Bent Normal and Ambient Occlusion baker for Unity.
-
 # Features
 * Supports baking ambient occlusion or bent normal maps from low-poly geometry, right in the editor.
 * Bakes textures for selected objects and automatically groups meshes into same output textures based on material usage (with option for overriding grouping).
