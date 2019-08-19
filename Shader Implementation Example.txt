@@ -1,0 +1,28 @@
+// These should all be in world space.
+// If your bent normal map is in tangent space, you multiply it with the TBN matrix just like a regular normal map.
+// If it is in object space, multiply it with the M matrix instead (unity_ObjectToWorld in Unity).
+float3 worldPos;
+float3 normal;
+float3 bentNormal;
+ 
+// ---------- AMBIENT TERM ----------
+ 
+// Sample the ambient term with the bent normal instead of the "straight" normal.
+// This will give you a color value which more closely resembles a raycast result.
+// (only works if your ambient term is direction-dependent, like SH probes or sampling a cubemap etc.)
+float3 ambient = Ambient(bentNormal);
+ 
+// ---------- REFLECTION TERM ----------
+ 
+// Calculate the fragment view direction
+float3 viewDir = normalize(worldPos - _WorldSpaceCameraPos);
+// Calculate the fragment reflection direction
+float3 reflDir = reflect(viewDir, normal);
+// Calculate the reflection occlusion factor. This is where the magic happens.
+float reflOcclusion = max(dot(reflDir, bentNormal), 0);
+// Attenuate the occlusion factor by the ambient occlusion.
+// This is important because we only want to attenuate reflections in areas where they "could" be attenuated.
+// If we didn't do this, reflections in open areas would also be attenuated.
+reflOcclusion = lerp(reflOcclusion, 1, ambientOcclusion);
+// Sample and attenuate the reflection
+float3 reflection = texCUBElod(_ReflectionCubemap, float4(reflDir, roughnessToMip)) * reflOcclusion;
