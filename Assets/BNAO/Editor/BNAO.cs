@@ -144,8 +144,6 @@ public class BNAO : EditorWindow
 
 	void OnGUI ()
     {
-		//if (samples > 5000 || bakeRes > Resolution._4096 || shadowMapRes > Resolution._4096)
-		//	EditorGUILayout.HelpBox("Extreme bake settings detected, expect long bake times.", MessageType.Warning);
 		bakeMode			= (BakeMode)EditorGUILayout.EnumPopup("Bake Mode", bakeMode);
 		if (bakeMode != BakeMode.BentNormal) EditorGUI.BeginDisabledGroup(true);
 		bentNormalsSpace	= (NormalsSpace)EditorGUILayout.EnumPopup("Normals Space", bentNormalsSpace);
@@ -209,8 +207,6 @@ public class BNAO : EditorWindow
 			normalCache = RenderTexture.GetTemporary(bakeRes, bakeRes, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear);
 			result = RenderTexture.GetTemporary(bakeRes, bakeRes, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear);
 
-			//positionCache.filterMode = FilterMode.Point;
-			//normalCache.filterMode = FilterMode.Point;
 			result.filterMode = FilterMode.Point;
 
 			Graphics.SetRenderTarget(positionCache);
@@ -231,7 +227,6 @@ public class BNAO : EditorWindow
 
 	Vector3 RandomDir ()
 	{
-		//return RenderSettings.sun.transform.forward;
 		float d, x, y, z;
 		do {
 			x = Random.value * 2.0f - 1.0f;
@@ -352,8 +347,6 @@ public class BNAO : EditorWindow
 
 		baking = true;
 
-		// Bundle renderers which share materials
-
 		// Mode switch
 		switch (bakeMode)
 		{
@@ -414,9 +407,7 @@ public class BNAO : EditorWindow
 				}
 			}
 		}
-		//var bounds = renderMeshes[0].renderer.bounds;
-		//for (int i = 1; i < renderMeshes.Count; i++)
-		//	bounds.Encapsulate(renderMeshes[i].renderer.bounds);
+
 		Vector3 rendererCenter = bounds.center;
 		float rendererRadius = Mathf.Max(Mathf.Max(bounds.extents.x, bounds.extents.y), bounds.extents.z);
 
@@ -456,14 +447,13 @@ public class BNAO : EditorWindow
 			}
 		}
 
+		// Get random vectors (uniformly distributed points on sphere)
 		var directions = PointsOnSphere((int)samples);
 
 		for (int sample = 0; sample < (int)samples; sample++)
 		{
 			EditorUtility.DisplayProgressBar("Baking " + fullName, "Baking sample " + sample + " / " + (int)(samples) + "...", (float)sample / (float)samples);
 			
-			// Get random vector
-			//var dir = RandomDir();
 			var dir = directions[sample];
 			// Position the camera
 			camera.transform.position = rendererCenter + dir * rendererRadius;
@@ -563,7 +553,6 @@ public class BNAO : EditorWindow
 		foreach (var bnaoObject in bnaoObjects)
 		{
 			EditorUtility.DisplayProgressBar("Baking " + fullName, "Saving texture(s)...", (float)u / bnaoObjects.Count);
-			//RenderTextureToFile(bnaoObject.Value.result, "Assets/BNAO/Bakes/" + bnaoObject.Value.name + "_" + bakeMode.ToString() + ".png");
 			var names = new List<string>();
 			foreach (var renderedMesh in bnaoObject.Value.renderedMeshes)
 				names.Add(renderedMesh.renderer.name);
@@ -595,10 +584,6 @@ public class BNAO : EditorWindow
 				u++;
 			}
 		}
-		//for (int i = 0; i < renderMeshes.Count; i++)
-		//{
-		//	renderMeshes[i].renderer.shadowCastingMode = shadowCastingModes[i];
-		//}
 
 		// Re-enable rest of scene
 		for (int i = 0; i < scene.Length; i++)
