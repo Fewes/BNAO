@@ -105,14 +105,14 @@ public class BNAO : EditorWindow
 	public string outputPath = "Assets/BNAO/Bakes";
 	public NameMode nameMode = NameMode.Shortest;
 
-	bool baking = false;
+	RenderTexture temp, shadowMap;
 
-    [MenuItem("Tools/BNAO")]
-    static void Init ()
-    {
+	[MenuItem("Tools/BNAO")]
+	static void Init ()
+	{
 		BNAO window  = (BNAO)EditorWindow.GetWindow(typeof(BNAO), false, "BNAO");
 		window.Show();
-    }
+	}
 
 	string fullName
 	{
@@ -131,19 +131,21 @@ public class BNAO : EditorWindow
 	}
 
 	protected void OnEnable ()
-     {
-         var data = EditorPrefs.GetString("BNAO", JsonUtility.ToJson(this, false));
-         JsonUtility.FromJsonOverwrite(data, this);
-     }
+	{
+		// Read prefs
+		var data = EditorPrefs.GetString("BNAO", JsonUtility.ToJson(this, false));
+		JsonUtility.FromJsonOverwrite(data, this);
+	}
  
-     protected void OnDisable ()
-     {
-         var data = JsonUtility.ToJson(this, false);
-         EditorPrefs.SetString("BNAO", data);
-     }
+	protected void OnDisable ()
+	{
+		// Store prefs
+		var data = JsonUtility.ToJson(this, false);
+		EditorPrefs.SetString("BNAO", data);
+	}
 
 	void OnGUI ()
-    {
+	{
 		bakeMode			= (BakeMode)EditorGUILayout.EnumPopup("Bake Mode", bakeMode);
 		if (bakeMode != BakeMode.BentNormal) EditorGUI.BeginDisabledGroup(true);
 		bentNormalsSpace	= (NormalsSpace)EditorGUILayout.EnumPopup("Normals Space", bentNormalsSpace);
@@ -177,8 +179,11 @@ public class BNAO : EditorWindow
 		{
 			Bake(Selection.gameObjects);
 		}
-    }
+	}
 
+	/// <summary>
+	/// Utility class coupling a renderer with a mesh (since the Renderer class doesn't necessarily have a mesh object in Unity).
+	/// </summary>
 	public struct RendereredMesh
 	{
 		public Renderer renderer;
@@ -191,6 +196,10 @@ public class BNAO : EditorWindow
 		}
 	}
 
+	/// <summary>
+	/// Class representing a BNAO "object". This is really just a way to group renderers which should share output textures together.
+	/// One BNAO object outputs one baked texture.
+	/// </summary>
 	public class BNAOObject
 	{
 		public string name;
@@ -238,28 +247,29 @@ public class BNAO : EditorWindow
 	}
 
 	Vector3[] PointsOnSphere (int n)
-    {
-        List<Vector3> upts = new List<Vector3>();
-        float inc = Mathf.PI * (3 - Mathf.Sqrt(5));
-        float off = 2.0f / n;
-        float x = 0;
-        float y = 0;
-        float z = 0;
-        float r = 0;
-        float phi = 0;
-       
-        for (var k = 0; k < n; k++){
-            y = k * off - 1 + (off /2);
-            r = Mathf.Sqrt(1 - y * y);
-            phi = k * inc;
-            x = Mathf.Cos(phi) * r;
-            z = Mathf.Sin(phi) * r;
-           
-            upts.Add(new Vector3(x, y, z));
-        }
-        Vector3[] pts = upts.ToArray();
-        return pts;
-    }
+	{
+		List<Vector3> upts = new List<Vector3>();
+		float inc = Mathf.PI * (3 - Mathf.Sqrt(5));
+		float off = 2.0f / n;
+		float x = 0;
+		float y = 0;
+		float z = 0;
+		float r = 0;
+		float phi = 0;
+
+		for (var k = 0; k < n; k++)
+		{
+			y = k * off - 1 + (off /2);
+			r = Mathf.Sqrt(1 - y * y);
+			phi = k * inc;
+			x = Mathf.Cos(phi) * r;
+			z = Mathf.Sin(phi) * r;
+
+			upts.Add(new Vector3(x, y, z));
+		}
+		Vector3[] pts = upts.ToArray();
+		return pts;
+	}
 
 	void Bake (GameObject[] selection)
 	{
@@ -345,7 +355,16 @@ public class BNAO : EditorWindow
 			return;
 		}
 
-		baking = true;
+		// Initialize temporary render texture
+		if (!temp || temp.width != (int)bakeRes)
+		{
+			if (temp)
+			{
+				temp.DiscardContents();
+				temp.Release();
+			}
+			temp = new RenderTexture((int)bakeRes, (int)bakeRes, 0, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear);
+		}
 
 		// Mode switch
 		switch (bakeMode)
@@ -412,7 +431,15 @@ public class BNAO : EditorWindow
 		float rendererRadius = Mathf.Max(Mathf.Max(bounds.extents.x, bounds.extents.y), bounds.extents.z);
 
 		// Initialize shadow map
-		var shadowMap = RenderTexture.GetTemporary((int)shadowMapRes, (int)shadowMapRes, 24, RenderTextureFormat.Shadowmap);
+		if (!shadowMap || shadowMap.width != (int)shadowMapRes)
+		{
+			if (shadowMap)
+			{
+				shadowMap.DiscardContents();
+				shadowMap.Release();
+			}
+			shadowMap = new RenderTexture((int)shadowMapRes, (int)shadowMapRes, 24, RenderTextureFormat.Shadowmap);
+		}
 
 		// Initialize camera
 		var go = new GameObject("BNAO_BakeCamera");
@@ -436,14 +463,11 @@ public class BNAO : EditorWindow
 		}
 
 		// Force enable bake objects and force double sided rendering
-		var shadowCastingModes = new List<ShadowCastingMode>();
 		foreach (var bnaoObject in bnaoObjects)
 		{
 			foreach (var renderMesh in bnaoObject.Value.renderedMeshes)
 			{
 				renderMesh.renderer.enabled = true;
-				shadowCastingModes.Add(renderMesh.renderer.shadowCastingMode);
-				renderMesh.renderer.shadowCastingMode = ShadowCastingMode.TwoSided;
 			}
 		}
 
@@ -493,12 +517,11 @@ public class BNAO : EditorWindow
 			{
 				bnao.SetTexture("_PositionCache", bnaoObject.Value.positionCache);
 				bnao.SetTexture("_NormalCache", bnaoObject.Value.normalCache);
-				var tmp = RenderTexture.GetTemporary(bnaoObject.Value.result.descriptor);
-				tmp.filterMode = FilterMode.Point;
-				Graphics.Blit(bnaoObject.Value.result, tmp);
-				bnao.SetTexture("_PrevTex", tmp);
+				Clear(temp, Color.clear);
+				temp.filterMode = FilterMode.Point;
+				Graphics.Blit(bnaoObject.Value.result, temp);
+				bnao.SetTexture("_PrevTex", temp);
 				Graphics.Blit(bnaoObject.Value.positionCache, bnaoObject.Value.result, bnao, 0);
-				RenderTexture.ReleaseTemporary(tmp);
 			}
 		}
 
@@ -507,9 +530,9 @@ public class BNAO : EditorWindow
 		// Post process
 		foreach (var bnaoObject in bnaoObjects)
 		{
-			var tmp = RenderTexture.GetTemporary(bnaoObject.Value.result.descriptor);
-			tmp.filterMode = FilterMode.Point;
-			Graphics.SetRenderTarget(tmp);
+			Clear(temp, Color.clear);
+			temp.filterMode = FilterMode.Point;
+			Graphics.SetRenderTarget(temp);
 			postProcess.SetTexture("_MainTex", bnaoObject.Value.result);
 			postProcess.SetFloat("_AOBias", aoBias);
 			postProcess.SetFloat("_UVChannel", (float)uvChannel);
@@ -520,32 +543,30 @@ public class BNAO : EditorWindow
 				postProcess.SetMatrix("_WorldToObject", renderMesh.renderer.transform.worldToLocalMatrix);
 				Graphics.DrawMeshNow(renderMesh.mesh, renderMesh.renderer.transform.localToWorldMatrix);
 			}
-			Graphics.Blit(tmp, bnaoObject.Value.result);
-			RenderTexture.ReleaseTemporary(tmp);
+			Graphics.Blit(temp, bnaoObject.Value.result);
 		}
 
 		// Dilate
 		foreach (var bnaoObject in bnaoObjects)
 		{
-			var tmp = RenderTexture.GetTemporary(bnaoObject.Value.result.descriptor);
-			tmp.filterMode = FilterMode.Point;
+			Clear(temp, Color.clear);
+			temp.filterMode = FilterMode.Point;
 			for (int i = 0; i < dilation; i++)
 			{
 				EditorUtility.DisplayProgressBar("Baking", "Dilating...", (float)i / (float)dilation);
 				dilate.SetTexture("_MainTex", bnaoObject.Value.result);
-				Graphics.Blit(bnaoObject.Value.result, tmp, dilate);
+				Graphics.Blit(bnaoObject.Value.result, temp, dilate);
 				i++;
 				if (i < dilation)
 				{
-					dilate.SetTexture("_MainTex", tmp);
-					Graphics.Blit(tmp, bnaoObject.Value.result, dilate);
+					dilate.SetTexture("_MainTex", temp);
+					Graphics.Blit(temp, bnaoObject.Value.result, dilate);
 				}
 				else
 				{
-					Graphics.Blit(tmp, bnaoObject.Value.result);
+					Graphics.Blit(temp, bnaoObject.Value.result);
 				}
 			}
-			RenderTexture.ReleaseTemporary(tmp);
 		}
 
 		// Output
@@ -574,35 +595,28 @@ public class BNAO : EditorWindow
 			u++;
 		}
 
-		// Restore shadow casting modes
-		u = 0;
-		foreach (var bnaoObject in bnaoObjects)
-		{
-			foreach (var renderMesh in bnaoObject.Value.renderedMeshes)
-			{
-				renderMesh.renderer.shadowCastingMode = shadowCastingModes[u];
-				u++;
-			}
-		}
-
 		// Re-enable rest of scene
 		for (int i = 0; i < scene.Length; i++)
 			scene[i].enabled = sceneEnabled[i];
 
 		// Clean up
-		RenderTexture.ReleaseTemporary(shadowMap);
 		DestroyImmediate(camera.gameObject);
 
 		UnityEditor.AssetDatabase.Refresh();
 
 		EditorUtility.ClearProgressBar();
-		baking = false;
+	}
+
+	void Clear (RenderTexture rt, Color clearColor)
+	{
+		Graphics.SetRenderTarget(rt);
+		GL.Clear(true, true, clearColor);
 	}
 
 	void RenderTextureToFile (RenderTexture rt, string path, Material composite)
 	{
-		var tmp = RenderTexture.GetTemporary(rt.descriptor);
-		Graphics.SetRenderTarget(tmp);
+		Clear(temp, Color.clear);
+		Graphics.SetRenderTarget(temp);
 		if (transparentPixels)
 			GL.Clear(true, true, Color.clear);
 		else
@@ -618,17 +632,16 @@ public class BNAO : EditorWindow
 			}
 		}
 		composite.SetTexture("_MainTex", rt);
-		Graphics.Blit(rt, tmp, composite);
+		Graphics.Blit(rt, temp, composite);
 
-		RenderTexture.active = tmp;
-        Texture2D tex = new Texture2D(tmp.width, tmp.height, TextureFormat.RGBA32, false);
-        tex.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0);
-        RenderTexture.active = null;
-		RenderTexture.ReleaseTemporary(tmp);
+		RenderTexture.active = temp;
+		Texture2D tex = new Texture2D(temp.width, temp.height, TextureFormat.RGBA32, false);
+		tex.ReadPixels(new Rect(0, 0, temp.width, temp.height), 0, 0);
+		RenderTexture.active = null;
 
-        byte[] bytes;
-        bytes = tex.EncodeToPNG();
-        
-        System.IO.File.WriteAllBytes(path, bytes);
+		byte[] bytes;
+		bytes = tex.EncodeToPNG();
+		
+		System.IO.File.WriteAllBytes(path, bytes);
 	}
 }
