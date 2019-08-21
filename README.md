@@ -11,6 +11,11 @@
 * Can bake objects with or without occlusion from other scene objects.
 * Can convert normal maps from tangent to object space and vice-versa.
 
+# Requirements
+BNAO runs on regular (as in, not compute) shaders and thus does not demand much from your GPU. However, it does require support for floating point and shadow map format render textures. To check if this is supported on your platform, use these functions:  
+SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBFloat);  
+SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.Shadowmap);  
+
 # What are bent normals?
 ![alt text](https://raw.githubusercontent.com/Fewes/BNAO/master/BentNormalsExample.gif)  
 Bent normal maps store the direction of least occlusion (in other words, the direction in which the most ambient light is coming from) in a texture.  
