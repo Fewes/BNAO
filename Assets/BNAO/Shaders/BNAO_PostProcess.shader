@@ -30,7 +30,7 @@ Shader "Hidden/BNAO_PostProcess"
 			CGPROGRAM
 				#pragma vertex vert
 				#pragma fragment frag
-				#pragma multi_compile MODE_BN MODE_AO
+				#pragma multi_compile MODE_BN MODE_AO MODE_CONVERSION
 
 				#include "UnityCG.cginc"
 
@@ -45,7 +45,7 @@ Shader "Hidden/BNAO_PostProcess"
 
 				float _UVChannel;
 				float _NormalsSpace;
-				float4x4 _WorldToObject;
+				float _ConversionMode;
 
 				v2f vert (appdata_full v)
 				{
@@ -75,6 +75,7 @@ Shader "Hidden/BNAO_PostProcess"
 				}
 
 				sampler2D _MainTex;
+				sampler2D _NormalCache;
 
 				float _AOBias;
 
@@ -83,25 +84,34 @@ Shader "Hidden/BNAO_PostProcess"
 					float4 color = tex2D(_MainTex, i.texcoord);
 					
 					#if MODE_AO
-						// color.rgb = pow(color.rgb, _AOBias);
-						// color.rgb *= 2;
-						// color.rgb = saturate((color.rgb - 0.5) * 2);
 						color.rgb /= _AOBias;
 					#elif MODE_BN
-						
 						// Normalize
 						float3 bentNormal = normalize(color.rgb);
 						
 						if (_NormalsSpace == 0.0)
-							bentNormal = mul(i.worldToTangent, float4(bentNormal, 0)).xyz; // Tangent space
-						else if (_NormalsSpace == 1.0)
-							bentNormal = mul(_WorldToObject, float4(bentNormal, 0)).xyz; // Object space
+							bentNormal = mul(i.worldToTangent, float4(bentNormal, 0)).xyz; // To tangent space
+						else
+							bentNormal = mul(unity_WorldToObject, float4(bentNormal, 0)).xyz; // To object space
 
 						// Pack
 						bentNormal.xy = bentNormal.xy*0.5+0.5;
 						color.rgb = bentNormal;
+					#elif MODE_CONVERSION
+						float3 worldNormal = tex2D(_NormalCache, i.texcoord);
+						float3 outNormal;
+						if (_ConversionMode == 0.0)
+						{
+							outNormal = mul(unity_WorldToObject, float4(worldNormal, 0)).xyz; // To object space
+							outNormal.xyz = outNormal.xyz*0.5+0.5;
+						}
+						else
+						{
+							outNormal = mul(i.worldToTangent, float4(worldNormal, 0)).xyz; // To tangent space
+							outNormal.xy = outNormal.xy*0.5+0.5;
+						}
 						
-						// color.rgb = color.rgb*0.5+0.5;
+						color = float4(outNormal, 1);
 					#endif
 					
 					return color;

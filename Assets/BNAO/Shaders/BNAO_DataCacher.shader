@@ -34,6 +34,7 @@ Shader "Hidden/BNAO_DataCacher"
 			CGPROGRAM
 				#pragma vertex vert
 				#pragma fragment frag
+				#pragma multi_compile MODE_BN MODE_AO MODE_CONVERSION
 
 				#include "UnityCG.cginc"
 
@@ -48,6 +49,7 @@ Shader "Hidden/BNAO_DataCacher"
 
 				float _UVChannel;
 				float _HasNormalTex;
+				float _ConversionMode;
 
 				v2f vert (appdata_full v)
 				{
@@ -88,13 +90,26 @@ Shader "Hidden/BNAO_DataCacher"
 				{
 					FragmentOutput o;
 
-					fixed3 tNormal = float3(0, 0, 1);
+					fixed4 tex = float4(0, 0, 1, 1);
 					if (_HasNormalTex == 1.0)
-						tNormal = UnpackNormal(tex2D(_NormalTex, i.texcoord));
+						tex = tex2D(_NormalTex, i.texcoord);
 
-					fixed3 normal = mul(i.tangentToWorld, float4(tNormal, 0));
-
-					// normal = i.normal;
+					#if MODE_CONVERSION
+						fixed3 normal;
+						if (_ConversionMode == 0.0)
+						{
+							fixed3 tNormal = UnpackNormal(tex);
+							normal = mul(i.tangentToWorld, float4(tNormal, 0)); // Input is tangent space
+						}
+						else
+						{
+							fixed3 tNormal = tex.xyz*2-1;
+							normal = mul(unity_ObjectToWorld, float4(tNormal, 0)); // Input is object space
+						}
+					#else
+						fixed3 tNormal = UnpackNormal(tex);
+						fixed3 normal = mul(i.tangentToWorld, float4(tNormal, 0));
+					#endif
 					
 					o.position 	= float4(i.worldPos, 1);
 					o.normal 	= float4(normalize(normal), 1);
