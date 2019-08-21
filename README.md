@@ -4,10 +4,12 @@
 
 # Features
 * Supports baking ambient occlusion or bent normal maps from low-poly geometry, right in the editor.
+* Supports baking with alpha-tested materials.
 * Bakes textures for selected objects and automatically groups meshes into same output textures based on material usage (with option for overriding grouping).
 * Can bake tangent, object and world-space bent normal maps.
 * Automatically uses normal maps present in original materials for a higher quality result.
 * Can bake objects with or without occlusion from other scene objects.
+* Can convert normal maps from tangent to object space and vice-versa.
 
 # What are bent normals?
 ![alt text](https://raw.githubusercontent.com/Fewes/BNAO/master/BentNormalsExample.gif)  
@@ -17,3 +19,6 @@ For details on how to implement these effects in your own shader, see the file "
 
 # Can I specify a max distance for the ambient occlusion?
 No. The baker uses depth textures (similar to shadow mapping) to determine ray intersections, which makes it impossible to bias the result based on distance.
+
+# The normals convertor outputs weird results!
+Make sure your texture settings for the input texture are correct. For TS normals just set "Texture Type" to "Normal Map". For OS normals, leave it at "Default" but uncheck "sRGB (Color Texture)".
