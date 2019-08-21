@@ -19,3 +19,6 @@ For details on how to implement these effects in your own shader, see the file "
 
 # Can I specify a max distance for the ambient occlusion?
 No. The baker uses depth textures (similar to shadow mapping) to determine ray intersections, which makes it impossible to bias the result based on distance.
+
+# The normals convertor outputs weird results!
+Make sure your texture settings for the input texture are correct. For TS normals just set "Texture Type" to "Normal Map". For OS normals, leave it at "Default" but uncheck "sRGB (Color Texture)".
