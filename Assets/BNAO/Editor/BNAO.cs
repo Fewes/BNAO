@@ -33,7 +33,8 @@ public class BNAO : EditorWindow
 	public enum BakeMode
 	{
 		BentNormal,
-		AmbientOcclusion
+		AmbientOcclusion,
+		NormalsConversion
 	}
 
 	[System.Serializable]
@@ -42,6 +43,13 @@ public class BNAO : EditorWindow
 		Tangent = 0,
 		Object = 1,
 		World = 2
+	}
+
+	[System.Serializable]
+	public enum NormalsConversionMode
+	{
+		TangentToObject = 0,
+		ObjectToTangent = 1,
 	}
 
 	[System.Serializable]
@@ -84,7 +92,8 @@ public class BNAO : EditorWindow
 	}
 
 	public BakeMode bakeMode = BakeMode.BentNormal;
-	public NormalsSpace bentNormalsSpace;
+	public NormalsSpace bentNormalsSpace = NormalsSpace.Tangent;
+	public NormalsConversionMode normalsConversionMode = NormalsConversionMode.TangentToObject;
 	public UVChannel uvChannel = UVChannel.UV0;
 	public Resolution bakeRes = Resolution._2048;
 	public Resolution shadowMapRes = Resolution._2048;
@@ -114,19 +123,21 @@ public class BNAO : EditorWindow
 		window.Show();
 	}
 
-	string fullName
+	string progressTitle
 	{
 		get
 		{
 			switch (bakeMode)
 			{
 				case BakeMode.BentNormal:
-					return "Bent Normal Map";
+					return "Baking Bent Normal Map";
 				case BakeMode.AmbientOcclusion:
-					return "Ambient Occlusion Map";
+					return "Baking Ambient Occlusion Map";
+				case BakeMode.NormalsConversion:
+					return "Converting Normals";
 			}
 
-			return "... wait what?!";
+			return "Baking... wait what?!";
 		}
 	}
 
@@ -135,6 +146,7 @@ public class BNAO : EditorWindow
 		// Read prefs
 		var data = EditorPrefs.GetString("BNAO", JsonUtility.ToJson(this, false));
 		JsonUtility.FromJsonOverwrite(data, this);
+		Selection.selectionChanged += Repaint;
 	}
  
 	protected void OnDisable ()
@@ -142,43 +154,58 @@ public class BNAO : EditorWindow
 		// Store prefs
 		var data = JsonUtility.ToJson(this, false);
 		EditorPrefs.SetString("BNAO", data);
+		Selection.selectionChanged -= Repaint;
 	}
 
 	void OnGUI ()
 	{
-		bakeMode			= (BakeMode)EditorGUILayout.EnumPopup("Bake Mode", bakeMode);
+		bakeMode				= (BakeMode)EditorGUILayout.EnumPopup("Bake Mode", bakeMode);
 		if (bakeMode != BakeMode.BentNormal) EditorGUI.BeginDisabledGroup(true);
-		bentNormalsSpace	= (NormalsSpace)EditorGUILayout.EnumPopup("Normals Space", bentNormalsSpace);
+		bentNormalsSpace		= (NormalsSpace)EditorGUILayout.EnumPopup("Normals Space", bentNormalsSpace);
 		if (bakeMode != BakeMode.BentNormal) EditorGUI.EndDisabledGroup();
-		uvChannel			= (UVChannel)EditorGUILayout.EnumPopup(new GUIContent("Texture Channel", "The UV channel to use when generating the output texture(s)."), uvChannel);
-		bakeRes				= (Resolution)EditorGUILayout.EnumPopup(new GUIContent("Output resolution", "The resolution of the output texture(s)."), bakeRes);
-		samples				= EditorGUILayout.IntSlider(new GUIContent("Sample Count", "The number of depth map samples used for each pixel."), samples, 64, 8192);
-		shadowMapRes		= (Resolution)EditorGUILayout.EnumPopup(new GUIContent("Depth Map Resolution", "The resolution of the depth map. Probably only have to increase this if baking high-resolution maps for multiple, large objects."), shadowMapRes);
-		dilation			= Mathf.Max(EditorGUILayout.IntField(new GUIContent("Dilation", "Adds edge padding to the output."), dilation), 0);
-		shadowBias			= EditorGUILayout.Slider(new GUIContent("Depth Bias", "Depth map sampling bias. A larger value will generally give you less artifacts at the cost of loss of accuracy."), shadowBias, 0f, 1f);
+		if (bakeMode != BakeMode.NormalsConversion) EditorGUI.BeginDisabledGroup(true);
+		normalsConversionMode	= (NormalsConversionMode)EditorGUILayout.EnumPopup("Conversion Mode", normalsConversionMode);
+		if (bakeMode != BakeMode.NormalsConversion) EditorGUI.EndDisabledGroup();
+		uvChannel				= (UVChannel)EditorGUILayout.EnumPopup(new GUIContent("Texture Channel", "The UV channel to use when generating the output texture(s)."), uvChannel);
+		bakeRes					= (Resolution)EditorGUILayout.EnumPopup(new GUIContent("Output resolution", "The resolution of the output texture(s)."), bakeRes);
+		if (bakeMode == BakeMode.NormalsConversion) EditorGUI.BeginDisabledGroup(true);
+		samples					= EditorGUILayout.IntSlider(new GUIContent("Sample Count", "The number of depth map samples used for each pixel."), samples, 64, 8192);
+		shadowMapRes			= (Resolution)EditorGUILayout.EnumPopup(new GUIContent("Depth Map Resolution", "The resolution of the depth map. Probably only have to increase this if baking high-resolution maps for multiple, large objects."), shadowMapRes);
+		if (bakeMode == BakeMode.NormalsConversion) EditorGUI.EndDisabledGroup();
+		dilation				= Mathf.Max(EditorGUILayout.IntField(new GUIContent("Dilation", "Adds edge padding to the output."), dilation), 0);
+		if (bakeMode == BakeMode.NormalsConversion) EditorGUI.BeginDisabledGroup(true);
+		shadowBias				= EditorGUILayout.Slider(new GUIContent("Depth Bias", "Depth map sampling bias. A larger value will generally give you less artifacts at the cost of loss of accuracy."), shadowBias, 0f, 1f);
+		if (bakeMode == BakeMode.NormalsConversion) EditorGUI.EndDisabledGroup();
 		if (bakeMode != BakeMode.AmbientOcclusion) EditorGUI.BeginDisabledGroup(true);
-		aoBias				= EditorGUILayout.Slider(new GUIContent("AO Bias", "Ambient Occlusion output bias. A value of 0.5 is considered neutral."), aoBias, 0f, 1f);
+		aoBias					= EditorGUILayout.Slider(new GUIContent("AO Bias", "Ambient Occlusion output bias. A value of 0.5 is considered neutral."), aoBias, 0f, 1f);
 		if (bakeMode != BakeMode.AmbientOcclusion) EditorGUI.EndDisabledGroup();
-		clampToHemisphere	= EditorGUILayout.Toggle(new GUIContent("Clamp To Hemisphere", "Discard samples that would intersect the pixel's own surface."), clampToHemisphere);
-		includeScene		= EditorGUILayout.Toggle(new GUIContent("Include Scene", "If checked, will include other non-selected objects in the scene when rendering the depth map."), includeScene);
-		forceSharedTexture	= EditorGUILayout.Toggle(new GUIContent("Force Shared Texture", "If checked, will render all selected objects into the same output texture. Useful if you are baking multiple objects which share a texture, but don't share materials. Objects with the same material will still be grouped even if this is not checked."), forceSharedTexture);
+		if (bakeMode == BakeMode.NormalsConversion) EditorGUI.BeginDisabledGroup(true);
+		clampToHemisphere		= EditorGUILayout.Toggle(new GUIContent("Clamp To Hemisphere", "Discard samples that would intersect the pixel's own surface."), clampToHemisphere);
+		includeScene			= EditorGUILayout.Toggle(new GUIContent("Include Scene", "If checked, will include other non-selected objects in the scene when rendering the depth map."), includeScene);
+		if (bakeMode == BakeMode.NormalsConversion) EditorGUI.EndDisabledGroup();
+		forceSharedTexture		= EditorGUILayout.Toggle(new GUIContent("Force Shared Texture", "If checked, will render all selected objects into the same output texture. Useful if you are baking multiple objects which share a texture, but don't share materials. Objects with the same material will still be grouped even if this is not checked."), forceSharedTexture);
+		if (bakeMode == BakeMode.NormalsConversion) EditorGUI.BeginDisabledGroup(true);
 		if (forceSharedTexture) EditorGUI.BeginDisabledGroup(true);
-		useNormalMaps		= EditorGUILayout.Toggle(new GUIContent("Use Normal Maps", "If checked, the baker will include any normal maps present on the original materials when baking. This can give a higher quality result if the bake resolution is high enough."), useNormalMaps);
+		useNormalMaps			= EditorGUILayout.Toggle(new GUIContent("Use Normal Maps", "If checked, the baker will include any normal maps present on the original materials when baking. This can give a higher quality result if the bake resolution is high enough."), useNormalMaps);
 		if (forceSharedTexture) EditorGUI.EndDisabledGroup();
-		useOriginalShaders	= EditorGUILayout.Toggle(new GUIContent("Use Original Shaders", "Bake the depth maps using the objects' original shaders. This is useful if you are using vertex-modifying shaders, but also prevents overriding the face cull mode."), useOriginalShaders);
+		useOriginalShaders		= EditorGUILayout.Toggle(new GUIContent("Use Original Shaders", "Bake the depth maps using the objects' original shaders. This is useful if you are using vertex-modifying shaders, but also prevents overriding the face cull mode."), useOriginalShaders);
 		if (useOriginalShaders) EditorGUI.BeginDisabledGroup(true);
-		cullOverrideMode	= (CullOverrideMode)EditorGUILayout.EnumPopup(new GUIContent("Face Cull Override", "Force double or single-sided rendering. In most cases you probably want to force double-sided."), cullOverrideMode);
+		cullOverrideMode		= (CullOverrideMode)EditorGUILayout.EnumPopup(new GUIContent("Face Cull Override", "Force double or single-sided rendering. In most cases you probably want to force double-sided."), cullOverrideMode);
 		if (useOriginalShaders) EditorGUI.EndDisabledGroup();
+		if (bakeMode == BakeMode.NormalsConversion) EditorGUI.EndDisabledGroup();
 
-		transparentPixels	= EditorGUILayout.Toggle(new GUIContent("Transparent Background", "Whether to fill background pixels in the output texture with neutral values or leave them blank."), transparentPixels);
+		transparentPixels		= EditorGUILayout.Toggle(new GUIContent("Transparent Background", "Whether to fill background pixels in the output texture with neutral values or leave them blank."), transparentPixels);
 		GUILayout.Space(4);
-		outputPath			= EditorGUILayout.TextField("Output Folder", outputPath);
-		nameMode			= (NameMode)EditorGUILayout.EnumPopup(new GUIContent("Output Names", "How to determine the output file name. Only used if multiple objects which share materials are selected."), nameMode);
+		outputPath				= EditorGUILayout.TextField("Output Folder", outputPath);
+		nameMode				= (NameMode)EditorGUILayout.EnumPopup(new GUIContent("Output Names", "How to determine the output file name. Only used if multiple objects which share materials are selected."), nameMode);
 		var rect = GUILayoutUtility.GetLastRect();
-		if (GUILayout.Button("Bake Selected Objects"))
+
+		if (Selection.gameObjects.Length < 1) EditorGUI.BeginDisabledGroup(true);
+		if (GUILayout.Button(Selection.gameObjects.Length < 1 ? "Select some objects to bake!" : (Selection.gameObjects.Length == 1 ? "Bake Selected Object" : "Bake Selected Objects")))
 		{
 			Bake(Selection.gameObjects);
 		}
+		if (Selection.gameObjects.Length < 1) EditorGUI.EndDisabledGroup();
 	}
 
 	/// <summary>
@@ -372,10 +399,17 @@ public class BNAO : EditorWindow
 			case BakeMode.BentNormal:
 				Shader.EnableKeyword("MODE_BN");
 				Shader.DisableKeyword("MODE_AO");
+				Shader.DisableKeyword("MODE_CONVERSION");
 			break;
 			case BakeMode.AmbientOcclusion:
 				Shader.DisableKeyword("MODE_BN");
 				Shader.EnableKeyword("MODE_AO");
+				Shader.DisableKeyword("MODE_CONVERSION");
+			break;
+			case BakeMode.NormalsConversion:
+				Shader.DisableKeyword("MODE_BN");
+				Shader.DisableKeyword("MODE_AO");
+				Shader.EnableKeyword("MODE_CONVERSION");
 			break;
 		}
 
@@ -403,129 +437,140 @@ public class BNAO : EditorWindow
 					}
 				}
 				dataCacher.SetFloat("_UVChannel", (float)uvChannel);
+				dataCacher.SetFloat("_ConversionMode", (float)normalsConversionMode);
 				dataCacher.SetPass(0);
 				Graphics.DrawMeshNow(renderMesh.mesh, renderMesh.renderer.transform.localToWorldMatrix);
 			}
 		}
 
-		// Calculate spherical bounds of all objects to be rendered
-		var bounds = new Bounds();
-		bool first = true;
-		foreach (var bnaoObject in bnaoObjects)
+		if (bakeMode != BakeMode.NormalsConversion)
 		{
-			foreach (var rendermesh in bnaoObject.Value.renderedMeshes)
-			{
-				if (first)
-				{
-					bounds = rendermesh.renderer.bounds;
-					first = false;
-				}
-				else
-				{
-					bounds.Encapsulate(rendermesh.renderer.bounds);
-				}
-			}
-		}
-
-		Vector3 rendererCenter = bounds.center;
-		float rendererRadius = Mathf.Max(Mathf.Max(bounds.extents.x, bounds.extents.y), bounds.extents.z);
-
-		// Initialize shadow map
-		if (!shadowMap || shadowMap.width != (int)shadowMapRes)
-		{
-			if (shadowMap)
-			{
-				shadowMap.DiscardContents();
-				shadowMap.Release();
-			}
-			shadowMap = new RenderTexture((int)shadowMapRes, (int)shadowMapRes, 24, RenderTextureFormat.Shadowmap);
-		}
-
-		// Initialize camera
-		var go = new GameObject("BNAO_BakeCamera");
-		var camera = go.AddComponent<Camera>();
-		camera.enabled  = false;
-		camera.farClipPlane = rendererRadius * 2;
-		camera.nearClipPlane = 0.01f;
-		camera.orthographic = true;
-		camera.orthographicSize = rendererRadius;
-		camera.aspect = 1f;
-		camera.targetTexture = shadowMap;
-
-		// Disable rest of scene
-		var scene = FindObjectsOfType<Renderer>();
-		var sceneEnabled = new bool[scene.Length];
-		for (int i = 0; i < scene.Length; i++)
-		{
-			sceneEnabled[i] = scene[i].enabled;
-			if (!includeScene)
-				scene[i].enabled = false;
-		}
-
-		// Force enable bake objects and force double sided rendering
-		foreach (var bnaoObject in bnaoObjects)
-		{
-			foreach (var renderMesh in bnaoObject.Value.renderedMeshes)
-			{
-				renderMesh.renderer.enabled = true;
-			}
-		}
-
-		// Get random vectors (uniformly distributed points on sphere)
-		var directions = PointsOnSphere((int)samples);
-
-		for (int sample = 0; sample < (int)samples; sample++)
-		{
-			EditorUtility.DisplayProgressBar("Baking " + fullName, "Baking sample " + sample + " / " + (int)(samples) + "...", (float)sample / (float)samples);
-			
-			var dir = directions[sample];
-			// Position the camera
-			camera.transform.position = rendererCenter + dir * rendererRadius;
-			// Aim the camera
-			camera.transform.rotation = Quaternion.LookRotation(-dir);
-			// Render the shadow map
-			if (useOriginalShaders)
-				camera.Render();
-			else
-				camera.RenderWithShader(depthShader, "RenderType");
-
-			// Bind shadow map
-			Shader.SetGlobalTexture("_ShadowMap", shadowMap);
-
-			// Calculate world-to-shadow matrix
-			var proj = camera.projectionMatrix;
-			if (SystemInfo.usesReversedZBuffer) {
-				proj.m20 = -proj.m20;
-				proj.m21 = -proj.m21;
-				proj.m22 = -proj.m22;
-				proj.m23 = -proj.m23;
-			}
-			var view = camera.worldToCameraMatrix;
-			var scaleOffset = Matrix4x4.identity;
-			scaleOffset.m00 = scaleOffset.m11 = scaleOffset.m22 = 0.5f;
-			scaleOffset.m03 = scaleOffset.m13 = scaleOffset.m23 = 0.5f;
-			var worldToShadow = scaleOffset * (proj * view);
-			Shader.SetGlobalMatrix("_WorldToShadow", worldToShadow);
-
-			Shader.SetGlobalFloat("_Samples", (float)samples);
-			Shader.SetGlobalFloat("_Sample", (float)sample);
-			Shader.SetGlobalVector("_Dir", dir);
-			Shader.SetGlobalFloat("_ShadowBias", shadowBias);
-			Shader.SetGlobalFloat("_ClampToHemisphere", clampToHemisphere ? 1f : 0f);
-
+			// Calculate spherical bounds of all objects to be rendered
+			var bounds = new Bounds();
+			bool first = true;
 			foreach (var bnaoObject in bnaoObjects)
 			{
-				bnao.SetTexture("_PositionCache", bnaoObject.Value.positionCache);
-				bnao.SetTexture("_NormalCache", bnaoObject.Value.normalCache);
-				Clear(temp, Color.clear);
-				temp.filterMode = FilterMode.Point;
-				Graphics.Blit(bnaoObject.Value.result, temp);
-				bnao.SetTexture("_PrevTex", temp);
-				Graphics.Blit(bnaoObject.Value.positionCache, bnaoObject.Value.result, bnao, 0);
+				foreach (var rendermesh in bnaoObject.Value.renderedMeshes)
+				{
+					if (first)
+					{
+						bounds = rendermesh.renderer.bounds;
+						first = false;
+					}
+					else
+					{
+						bounds.Encapsulate(rendermesh.renderer.bounds);
+					}
+				}
 			}
+
+			Vector3 rendererCenter = bounds.center;
+			float rendererRadius = Mathf.Max(Mathf.Max(bounds.extents.x, bounds.extents.y), bounds.extents.z);
+
+			// Initialize shadow map
+			if (!shadowMap || shadowMap.width != (int)shadowMapRes)
+			{
+				if (shadowMap)
+				{
+					shadowMap.DiscardContents();
+					shadowMap.Release();
+				}
+				shadowMap = new RenderTexture((int)shadowMapRes, (int)shadowMapRes, 24, RenderTextureFormat.Shadowmap);
+			}
+
+			// Initialize camera
+			var go = new GameObject("BNAO_BakeCamera");
+			var camera = go.AddComponent<Camera>();
+			camera.enabled  = false;
+			camera.farClipPlane = rendererRadius * 2;
+			camera.nearClipPlane = 0.01f;
+			camera.orthographic = true;
+			camera.orthographicSize = rendererRadius;
+			camera.aspect = 1f;
+			camera.targetTexture = shadowMap;
+
+			// Disable rest of scene
+			var scene = FindObjectsOfType<Renderer>();
+			var sceneEnabled = new bool[scene.Length];
+			for (int i = 0; i < scene.Length; i++)
+			{
+				sceneEnabled[i] = scene[i].enabled;
+				if (!includeScene)
+					scene[i].enabled = false;
+			}
+
+			// Force enable bake objects and force double sided rendering
+			foreach (var bnaoObject in bnaoObjects)
+			{
+				foreach (var renderMesh in bnaoObject.Value.renderedMeshes)
+				{
+					renderMesh.renderer.enabled = true;
+				}
+			}
+
+			// Get random vectors (uniformly distributed points on sphere)
+			var directions = PointsOnSphere((int)samples);
+
+			for (int sample = 0; sample < (int)samples; sample++)
+			{
+				EditorUtility.DisplayProgressBar(progressTitle, "Baking sample " + sample + " / " + (int)(samples) + "...", (float)sample / (float)samples);
+			
+				var dir = directions[sample];
+				// Position the camera
+				camera.transform.position = rendererCenter + dir * rendererRadius;
+				// Aim the camera
+				camera.transform.rotation = Quaternion.LookRotation(-dir);
+				// Render the shadow map
+				if (useOriginalShaders)
+					camera.Render();
+				else
+					camera.RenderWithShader(depthShader, "RenderType");
+
+				// Bind shadow map
+				Shader.SetGlobalTexture("_ShadowMap", shadowMap);
+
+				// Calculate world-to-shadow matrix
+				var proj = camera.projectionMatrix;
+				if (SystemInfo.usesReversedZBuffer) {
+					proj.m20 = -proj.m20;
+					proj.m21 = -proj.m21;
+					proj.m22 = -proj.m22;
+					proj.m23 = -proj.m23;
+				}
+				var view = camera.worldToCameraMatrix;
+				var scaleOffset = Matrix4x4.identity;
+				scaleOffset.m00 = scaleOffset.m11 = scaleOffset.m22 = 0.5f;
+				scaleOffset.m03 = scaleOffset.m13 = scaleOffset.m23 = 0.5f;
+				var worldToShadow = scaleOffset * (proj * view);
+				Shader.SetGlobalMatrix("_WorldToShadow", worldToShadow);
+
+				Shader.SetGlobalFloat("_Samples", (float)samples);
+				Shader.SetGlobalFloat("_Sample", (float)sample);
+				Shader.SetGlobalVector("_Dir", dir);
+				Shader.SetGlobalFloat("_ShadowBias", shadowBias);
+				Shader.SetGlobalFloat("_ClampToHemisphere", clampToHemisphere ? 1f : 0f);
+
+				foreach (var bnaoObject in bnaoObjects)
+				{
+					bnao.SetTexture("_PositionCache", bnaoObject.Value.positionCache);
+					bnao.SetTexture("_NormalCache", bnaoObject.Value.normalCache);
+					Clear(temp, Color.clear);
+					temp.filterMode = FilterMode.Point;
+					Graphics.Blit(bnaoObject.Value.result, temp);
+					bnao.SetTexture("_PrevTex", temp);
+					Graphics.Blit(bnaoObject.Value.positionCache, bnaoObject.Value.result, bnao, 0);
+				}
+			}
+
+			// Re-enable rest of scene
+			for (int i = 0; i < scene.Length; i++)
+				scene[i].enabled = sceneEnabled[i];
+
+			// Clean up
+			DestroyImmediate(camera.gameObject);
 		}
 
-		EditorUtility.DisplayProgressBar("Baking " + fullName, "Post Processing...", 1);
+		EditorUtility.DisplayProgressBar(progressTitle, "Post Processing...", 1);
 
 		// Post process
 		foreach (var bnaoObject in bnaoObjects)
@@ -534,13 +579,14 @@ public class BNAO : EditorWindow
 			temp.filterMode = FilterMode.Point;
 			Graphics.SetRenderTarget(temp);
 			postProcess.SetTexture("_MainTex", bnaoObject.Value.result);
+			postProcess.SetTexture("_NormalCache", bnaoObject.Value.normalCache);
 			postProcess.SetFloat("_AOBias", aoBias);
 			postProcess.SetFloat("_UVChannel", (float)uvChannel);
 			postProcess.SetFloat("_NormalsSpace", (float)bentNormalsSpace);
+			postProcess.SetFloat("_ConversionMode", (float)normalsConversionMode);
 			postProcess.SetPass(0);
 			foreach (var renderMesh in bnaoObject.Value.renderedMeshes)
 			{
-				postProcess.SetMatrix("_WorldToObject", renderMesh.renderer.transform.worldToLocalMatrix);
 				Graphics.DrawMeshNow(renderMesh.mesh, renderMesh.renderer.transform.localToWorldMatrix);
 			}
 			Graphics.Blit(temp, bnaoObject.Value.result);
@@ -573,7 +619,7 @@ public class BNAO : EditorWindow
 		int u = 0;
 		foreach (var bnaoObject in bnaoObjects)
 		{
-			EditorUtility.DisplayProgressBar("Baking " + fullName, "Saving texture(s)...", (float)u / bnaoObjects.Count);
+			EditorUtility.DisplayProgressBar(progressTitle, "Saving texture(s)...", (float)u / bnaoObjects.Count);
 			var names = new List<string>();
 			foreach (var renderedMesh in bnaoObject.Value.renderedMeshes)
 				names.Add(renderedMesh.renderer.name);
@@ -591,16 +637,26 @@ public class BNAO : EditorWindow
 				case NameMode.Whatever:
 				break;
 			}
-			RenderTextureToFile(bnaoObject.Value.result, outputPath + "/" + names[0] + "_" + bakeMode.ToString() + ".png", composite);
+			string fileName = names[0];
+			switch (bakeMode)
+			{
+				case BakeMode.BentNormal:
+					fileName += "_BentNormal";
+				break;
+				case BakeMode.AmbientOcclusion:
+					fileName += "_AmbientOcclusion";
+				break;
+				case BakeMode.NormalsConversion:
+					if (normalsConversionMode == NormalsConversionMode.TangentToObject)
+						fileName += "_Normal_OS";
+					else
+						fileName += "_Normal_TS";
+				break;
+			}
+			fileName += ".png";
+			RenderTextureToFile(bnaoObject.Value.result, outputPath + "/" + fileName, composite);
 			u++;
 		}
-
-		// Re-enable rest of scene
-		for (int i = 0; i < scene.Length; i++)
-			scene[i].enabled = sceneEnabled[i];
-
-		// Clean up
-		DestroyImmediate(camera.gameObject);
 
 		UnityEditor.AssetDatabase.Refresh();
 
@@ -624,6 +680,7 @@ public class BNAO : EditorWindow
 			switch (bakeMode)
 			{
 				case BakeMode.BentNormal:
+				case BakeMode.NormalsConversion:
 					GL.Clear(true, true, new Color(0.5f, 0.5f, 1f, 1f));
 				break;
 				case BakeMode.AmbientOcclusion:
