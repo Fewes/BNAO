@@ -330,31 +330,40 @@ public class BNAO : EditorWindow
 
         void RemoveInNonZeroLODGroup<T>(List<T> renderer) where T:Renderer
         {
-            // throw out renderers that are in LODGroups and are not in the first LOD level
-            List<T> inNonZeroLodGroup = new List<T>();
+            // throw out renderers that are in LODGroups
+            // and whose material has appeared earlier in the LODGroup
+            List<T> shouldRemove = new List<T>();
+            var lodGroupMaterials = new Dictionary<LODGroup, List<Material>>();
             foreach (var mr in renderer)
             {
-                var g = mr.GetComponentInParent<LODGroup>();
-                if (g)
+                var lodGroup = mr.GetComponentInParent<LODGroup>();
+                if (lodGroup)
                 {
-                    var lods = g.GetLODs();
-                    int isInLodGroup = -1;
-                    for (int i = 0; i < lods.Length; i++)
-                    {
-                        if (lods[i].renderers.Contains(mr))
+                    if (!lodGroupMaterials.ContainsKey(lodGroup))
+                        lodGroupMaterials.Add(lodGroup, new List<Material>());
+                    
+                    // collect materials of that renderer
+                    bool allMaterialsAlreadyInList = true;
+                    foreach(var m in mr.sharedMaterials)
+                    { 
+                        if(!lodGroupMaterials[lodGroup].Contains(m))
                         {
-                            isInLodGroup = i;
-                            break;
+                            allMaterialsAlreadyInList = false;
+                            lodGroupMaterials[lodGroup].Add(m);
                         }
                     }
-
-                    if (isInLodGroup > 0)
-                        inNonZeroLodGroup.Add(mr);
+                    
+                    // all materials already earlier in the renderer list? discard this renderer
+                    if (allMaterialsAlreadyInList)
+                        shouldRemove.Add(mr);
                 }
             }
-            foreach (var r in inNonZeroLodGroup) {
+
+            foreach (var r in shouldRemove)
                 renderer.Remove(r);
-            }
+
+            if(shouldRemove.Count > 0)
+                Debug.Log("Removing renderers since they are in LODGroups and share materials with previous entries:\n" + string.Join("\n", shouldRemove.Select(x => x.transform.parent ? x.transform.parent.name + "/" + x.name : x.name)));
         }
 
         RemoveInNonZeroLODGroup(meshRenderers);
