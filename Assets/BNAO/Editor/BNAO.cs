@@ -510,6 +510,8 @@ public class BNAO : EditorWindow
 
 			// Get random vectors (uniformly distributed points on sphere)
 			var directions = PointsOnSphere((int)samples);
+			CommandBuffer buffer = new CommandBuffer();
+			RenderTargetIdentifier shadowMapId = new RenderTargetIdentifier(shadowMap);
 
 			for (int sample = 0; sample < (int)samples; sample++)
 			{
@@ -520,11 +522,25 @@ public class BNAO : EditorWindow
 				camera.transform.position = rendererCenter + dir * rendererRadius;
 				// Aim the camera
 				camera.transform.rotation = Quaternion.LookRotation(-dir);
-				// Render the shadow map
-				if (useOriginalShaders)
-					camera.Render();
-				else
-					camera.RenderWithShader(depthShader, "RenderType");
+
+				// set up command buffer
+				buffer.Clear();
+				Clear(shadowMap, Color.clear);
+				buffer.SetViewMatrix(camera.worldToCameraMatrix);
+				buffer.SetProjectionMatrix(camera.projectionMatrix);
+				buffer.SetRenderTarget(shadowMapId);
+				foreach (var bnaoObject in bnaoObjects)
+				{
+					foreach (var renderMesh in bnaoObject.Value.renderedMeshes)
+					{
+						// Render the shadow map
+						if (useOriginalShaders)
+							buffer.DrawMesh(renderMesh.mesh, renderMesh.renderer.localToWorldMatrix, renderMesh.renderer.material);
+						else
+							buffer.DrawMesh(renderMesh.mesh, renderMesh.renderer.localToWorldMatrix, new Material(depthShader));
+					}
+				}
+				Graphics.ExecuteCommandBuffer(buffer);
 
 				// Bind shadow map
 				Shader.SetGlobalTexture("_ShadowMap", shadowMap);
@@ -567,6 +583,7 @@ public class BNAO : EditorWindow
 				scene[i].enabled = sceneEnabled[i];
 
 			// Clean up
+			buffer.Release();
 			DestroyImmediate(camera.gameObject);
 		}
 
