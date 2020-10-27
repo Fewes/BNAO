@@ -529,15 +529,14 @@ public class BNAO : EditorWindow
 				buffer.SetViewMatrix(camera.worldToCameraMatrix);
 				buffer.SetProjectionMatrix(camera.projectionMatrix);
 				buffer.SetRenderTarget(shadowMapId);
-				foreach (var bnaoObject in bnaoObjects)
+				for (int i = 0; i < scene.Length; i++)
 				{
-					foreach (var renderMesh in bnaoObject.Value.renderedMeshes)
+					if(sceneEnabled[i])
 					{
-						// Render the shadow map
 						if (useOriginalShaders)
-							buffer.DrawMesh(renderMesh.mesh, renderMesh.renderer.localToWorldMatrix, renderMesh.renderer.material);
+							buffer.DrawMesh(scene[i].GetComponent<MeshFilter>().sharedMesh, scene[i].GetComponent<Renderer>().localToWorldMatrix, scene[i].GetComponent<Renderer>().material);
 						else
-							buffer.DrawMesh(renderMesh.mesh, renderMesh.renderer.localToWorldMatrix, new Material(depthShader));
+							buffer.DrawMesh(scene[i].GetComponent<MeshFilter>().sharedMesh, scene[i].GetComponent<Renderer>().localToWorldMatrix, new Material(depthShader));
 					}
 				}
 				Graphics.ExecuteCommandBuffer(buffer);
