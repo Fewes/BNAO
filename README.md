@@ -1,3 +1,5 @@
+# [--> Successor/cousin repository](https://github.com/Fewes/BakerBoy)
+
 # BNAO
 ![alt text](https://raw.githubusercontent.com/Fewes/BNAO/master/Example.png)
 ![alt text](https://raw.githubusercontent.com/Fewes/BNAO/master/UI.png)
