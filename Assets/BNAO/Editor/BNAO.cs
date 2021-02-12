@@ -327,6 +327,48 @@ public class BNAO : EditorWindow
 			meshRenderers.AddRange(gameObject.GetComponentsInChildren<MeshRenderer>());
 			skinnedMeshRenderers.AddRange(gameObject.GetComponentsInChildren<SkinnedMeshRenderer>());
 		}
+
+        void RemoveInNonZeroLODGroup<T>(List<T> renderer) where T:Renderer
+        {
+            // throw out renderers that are in LODGroups
+            // and whose material has appeared earlier in the LODGroup
+            List<T> shouldRemove = new List<T>();
+            var lodGroupMaterials = new Dictionary<LODGroup, List<Material>>();
+            foreach (var mr in renderer)
+            {
+                var lodGroup = mr.GetComponentInParent<LODGroup>();
+                if (lodGroup)
+                {
+                    if (!lodGroupMaterials.ContainsKey(lodGroup))
+                        lodGroupMaterials.Add(lodGroup, new List<Material>());
+                    
+                    // collect materials of that renderer
+                    bool allMaterialsAlreadyInList = true;
+                    foreach(var m in mr.sharedMaterials)
+                    { 
+                        if(!lodGroupMaterials[lodGroup].Contains(m))
+                        {
+                            allMaterialsAlreadyInList = false;
+                            lodGroupMaterials[lodGroup].Add(m);
+                        }
+                    }
+                    
+                    // all materials already earlier in the renderer list? discard this renderer
+                    if (allMaterialsAlreadyInList)
+                        shouldRemove.Add(mr);
+                }
+            }
+
+            foreach (var r in shouldRemove)
+                renderer.Remove(r);
+
+            if(shouldRemove.Count > 0)
+                Debug.Log("Removing renderers since they are in LODGroups and share materials with previous entries:\n" + string.Join("\n", shouldRemove.Select(x => x.transform.parent ? x.transform.parent.name + "/" + x.name : x.name)));
+        }
+
+        RemoveInNonZeroLODGroup(meshRenderers);
+        RemoveInNonZeroLODGroup(skinnedMeshRenderers);
+
 		Material mat = null;
 		foreach (var renderer in meshRenderers)
 		{
@@ -622,7 +664,7 @@ public class BNAO : EditorWindow
 			EditorUtility.DisplayProgressBar(progressTitle, "Saving texture(s)...", (float)u / bnaoObjects.Count);
 			var names = new List<string>();
 			foreach (var renderedMesh in bnaoObject.Value.renderedMeshes)
-				names.Add(renderedMesh.renderer.name);
+				names.Add((renderedMesh.renderer.transform.parent ? renderedMesh.renderer.transform.parent.name + "_" : "") + renderedMesh.renderer.name);
 			switch (nameMode)
 			{
 				case NameMode.Shortest:
